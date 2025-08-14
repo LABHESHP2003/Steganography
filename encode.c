@@ -2,6 +2,7 @@
 #include "encode.h"
 #include "types.h"
 #include "string.h"
+#include "common.h"
 
 /* Function Definitions */
 
@@ -80,6 +81,7 @@ Status read_and_validate_encode_args(char **argv,EncodeInfo *encInfo){
         encInfo->src_image_fname = argv[2];
     }
     else{
+        printf("[%s] Invalid source file format please select valid .bmp file\n",argv[2]);
         return e_failure;
     }
 
@@ -87,6 +89,7 @@ Status read_and_validate_encode_args(char **argv,EncodeInfo *encInfo){
         encInfo->secret_fname = argv[3];
     }
     else{
+        printf("[%s] Invalid secret file format please select valid .txt file\n",argv[3]);
         return e_failure;
     }
 
@@ -98,6 +101,7 @@ Status read_and_validate_encode_args(char **argv,EncodeInfo *encInfo){
         }
         else
         {
+            printf("[%s] Invalid destination file format please give valid [.bmp] file name\n",argv[4]);
             return e_failure;
         }
     }
@@ -138,6 +142,68 @@ Status copy_bmp_header(FILE *fptr_src_image, FILE *fptr_dest_image){
     return e_success;
 }
 
+Status encode_magic_string(char *magic_string, EncodeInfo *encInfo){
+    encode_data_to_image(magic_string, 2, encInfo);
+    return e_success;
+}
+
+
+Status encode_data_to_image(char *data, int size, EncodeInfo *encInfo){
+    for(int i=0;i < size;i++){
+        fread(encInfo -> image_data, 8, 1, encInfo->fptr_src_image);
+        encode_byte_to_lsb(data[i], encInfo->image_data);
+        fwrite(encInfo -> image_data, 8, 1, encInfo->fptr_stego_image);
+    }
+}
+
+Status encode_byte_to_lsb(char data, char *image_buffer){
+    for(int i=0; i < 8; i++){
+        image_buffer[i] = (image_buffer[i] & 0xFE) | ((data >> 7 - i) & 1);
+    }
+}
+
+Status encode_int_to_lsb(int size, EncodeInfo *encInfo){
+    char str[32];
+    fread(str,32,1, encInfo -> fptr_src_image);
+    for(int i = 0; i < 32; i++){
+        str[i] = (str[i] & 0xFE) | ((size >> 31 - i ) & 1);
+    }
+    fwrite(str, 32, 1, encInfo -> fptr_stego_image);
+}
+
+Status encode_size_of_extension(int size, EncodeInfo *encInfo){
+    encode_int_to_lsb(size, encInfo);
+    return e_success;
+}
+
+Status encode_secret_file_extn(char *file_extn, EncodeInfo *encInfo){
+    encode_data_to_image(file_extn, strlen(file_extn), encInfo);
+    return e_success;
+}
+
+Status encode_secret_file_size(long file_size, EncodeInfo *encInfo){
+    encode_int_to_lsb(file_size, encInfo);
+    return e_success;
+}
+
+Status encode_secret_file_data(EncodeInfo *encInfo){
+    char str[encInfo-> size_secret_file];
+    fseek(encInfo -> fptr_secret, 0, SEEK_SET);
+    fread(str,encInfo->size_secret_file,1,encInfo->fptr_secret);
+    encode_data_to_image(str,encInfo->size_secret_file,encInfo);
+    return e_success;
+}
+
+Status copy_remaining_img_data(FILE *fptr_src, FILE *fptr_dest){
+    char ch;
+    while(fread(&ch,1,1,fptr_src) == 1){
+        if(fwrite(&ch,1,1,fptr_dest) != 1){
+            return e_failure;
+        }
+    }
+    return e_success;
+}
+
 Status do_encoding(EncodeInfo *encInfo){
     if(open_files(encInfo) == e_success){
         printf("Open file is a success\n");
@@ -162,5 +228,56 @@ Status do_encoding(EncodeInfo *encInfo){
         printf("Failed to copy bmp header of %s to %s\n", encInfo -> src_image_fname, encInfo -> stego_image_fname);
         return e_failure;
     }
+
+    if((encode_magic_string(MAGIC_STRING,encInfo) == e_success)){
+        printf("Magic string is encoded successfully\n");
+    }
+    else{
+        printf("Failed to encode magic string\n");
+        return e_failure;
+    }
+    
+        strcpy(encInfo -> extn_secret_file, strchr(encInfo -> secret_fname,'.'));
+        //printf("%s\n",encInfo -> extn_secret_file);
+    if(encode_size_of_extension(strlen(encInfo -> extn_secret_file),encInfo) == e_success){
+        printf("Encoded the size of the extension successfully\n");
+    }   
+    else{
+        printf("Failed to encode the size extension\n");
+        return e_failure;
+    }
+
+    if(encode_secret_file_extn(encInfo -> extn_secret_file, encInfo) == e_success){
+        printf("Encoded the extension of the secret file successfully\n");
+    }
+    else{
+        printf("Failed to encode the secret file extension\n");
+        return e_failure;
+    }
+
+    if(encode_secret_file_size(encInfo->size_secret_file,encInfo) == e_success){
+        printf("Encoded the secret file's size successfully\n");
+    }
+    else{
+        printf("Failed to encode the secret file's size\n");
+        return e_failure;
+    }
+
+    if(encode_secret_file_data(encInfo) == e_success){
+        printf("Encoded the secret file data successfully\n");
+    }
+    else{
+        printf("Failed to encode the secret file data\n");
+        return e_failure;
+    }
+
+    if(copy_remaining_img_data(encInfo->fptr_src_image, encInfo->fptr_stego_image) == e_success){
+        printf("Copied remaining data successfully\n");
+    }
+    else{
+        printf("Failed to copy remaining data\n");
+        return e_failure;
+    }
+
     return e_success;
 }
