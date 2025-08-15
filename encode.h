@@ -3,7 +3,7 @@
 
 #include "types.h" // Contains user defined types
 
-/* 
+/*
  * Structure to store information required for
  * encoding secret file to source Image
  * Info about output and intermediate data is
@@ -35,7 +35,6 @@ typedef struct _EncodeInfo
     FILE *fptr_stego_image;
 
 } EncodeInfo;
-
 
 /* Encoding function prototype */
 
